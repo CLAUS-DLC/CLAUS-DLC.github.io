@@ -156,6 +156,7 @@ window.SSANNT_MEDIA = {
       const video = videoElements[slotIndex];
       video.src = source;
       video.muted = true;
+      video.preload = 'auto';
       video.load();
     }
 
@@ -229,6 +230,12 @@ window.SSANNT_MEDIA = {
         playVideoElement(active);
       }
     });
+
+    // Экономим батарею и GPU на ноутбуках: на слабом железе видео идёт в спокойном темпе
+    const lowPowerDevice = (navigator.hardwareConcurrency || 8) <= 4;
+    if (lowPowerDevice) {
+      videoElements.forEach((video) => { video.playbackRate = 0.85; });
+    }
 
     function loadTrack(index) {
       if (!tracks.length) return;
@@ -314,8 +321,9 @@ window.SSANNT_MEDIA = {
   'use strict';
 
   const TIMING = Object.freeze({
-    helloDelay: 160,
-    identityDelay: 2160,
+    helloDelay: 980,      // уведомления успевают уйти, HELLO — отдельная сцена
+    identityDelay: 2980,  // HELLO держится ~2с, как и было
+    toastLife: 780,
     injectLoading: 2000,
     bannedFill: 1600
   });
@@ -330,18 +338,54 @@ window.SSANNT_MEDIA = {
   function buildExclamationField(container) {
     const cellWidth = innerWidth < 760 ? 30 : 46;
     const cellHeight = innerWidth < 760 ? 40 : 56;
-    const columns = Math.ceil(innerWidth / cellWidth) + 2;
-    const rows = Math.ceil(innerHeight / cellHeight) + 2;
-    const count = Math.min(1000, columns * rows);
+    const columns = Math.ceil(innerWidth / cellWidth);
+    const rows = Math.ceil(innerHeight / cellHeight) + 1;
+    const count = columns * rows;
     const fragment = document.createDocumentFragment();
 
     for (let index = 0; index < count; index += 1) {
       const mark = document.createElement('span');
       mark.textContent = '?';
+      mark.style.visibility = 'hidden';
       fragment.appendChild(mark);
     }
 
     container.replaceChildren(fragment);
+
+    // Раскладываем знаки по сетке вручную, строго от края до края экрана —
+    // CSS-грид оставлял голые полосы по краям.
+    requestAnimationFrame(() => layoutExclamationField(container));
+  }
+
+  function layoutExclamationField(container) {
+    const marks = container.children;
+    if (!marks.length) return;
+
+    const viewportWidth = innerWidth;
+    const viewportHeight = innerHeight;
+    const cellWidth = viewportWidth < 760 ? 30 : 46;
+    const cellHeight = viewportWidth < 760 ? 40 : 56;
+    const columns = Math.ceil(viewportWidth / cellWidth);
+    const rows = Math.ceil(viewportHeight / cellHeight);
+    const stepX = viewportWidth / columns;
+    const stepY = viewportHeight / rows;
+
+    container.style.display = 'block';
+    container.style.padding = '0';
+    container.style.gap = '0';
+
+    for (let index = 0; index < marks.length; index += 1) {
+      const mark = marks[index];
+      const column = index % columns;
+      const row = Math.floor(index / columns);
+      mark.style.position = 'absolute';
+      mark.style.left = `${((column + 0.5) * stepX).toFixed(2)}px`;
+      mark.style.top = `${((row + 0.5) * stepY).toFixed(2)}px`;
+      mark.style.visibility = row < rows ? 'visible' : 'hidden';
+      mark.dataset.row = String(row);
+      mark.dataset.col = String(column);
+      mark.dataset.oddRow = row % 2 === 0 ? '1' : '0';
+    }
   }
 
   function buildBannedField(container) {
@@ -373,12 +417,19 @@ window.SSANNT_MEDIA = {
     return words;
   }
 
-  function animateProgress(element, duration, onComplete) {
+  function animateProgress(element, duration, onComplete, bar) {
     const startTime = performance.now();
+    let lastPercent = -1;
 
     function frame(now) {
       const progress = Math.min(1, (now - startTime) / duration);
-      element.textContent = `${Math.floor(progress * 100)}%`;
+      const percent = Math.floor(progress * 100);
+
+      if (percent !== lastPercent) {
+        lastPercent = percent;
+        element.textContent = `${percent}%`;
+        if (bar) bar.style.width = `${percent}%`;
+      }
 
       if (progress < 1) requestAnimationFrame(frame);
       else onComplete();
@@ -420,6 +471,7 @@ window.SSANNT_MEDIA = {
     const enterButton = document.getElementById('enterSite');
     const injectButton = document.getElementById('injectButton');
     const injectPercent = document.getElementById('injectPercent');
+    const injectBar = document.getElementById('injectBar');
     const exclamationField = document.getElementById('exclamationField');
     const bannedField = document.getElementById('bannedField');
     const helloAudio = document.getElementById('helloAudio');
@@ -465,6 +517,10 @@ window.SSANNT_MEDIA = {
       }, TIMING.helloDelay);
 
       setTimeout(() => {
+        document.body.classList.add('toasts-dismissed');
+      }, TIMING.toastLife);
+
+      setTimeout(() => {
         document.body.classList.add('identity-visible');
       }, TIMING.identityDelay);
     }
@@ -476,6 +532,15 @@ window.SSANNT_MEDIA = {
       injectButton.disabled = true;
       injectButton.classList.add('is-loading');
       document.body.classList.add('inject-loading');
+      injectButton.animate(
+        [
+          { transform: 'translateX(0) scale(1)' },
+          { transform: 'translateX(-3px) scale(.985)' },
+          { transform: 'translateX(2px) scale(1.01)' },
+          { transform: 'translateX(0) scale(1)' }
+        ],
+        { duration: 260, easing: 'cubic-bezier(.2,.8,.2,1)' }
+      );
 
       helloAudio.pause();
       helloAudio.currentTime = 0;
@@ -495,7 +560,7 @@ window.SSANNT_MEDIA = {
             bannedField.replaceChildren();
           }, 700);
         });
-      });
+      }, injectBar);
     }
 
     enterButton.addEventListener('click', beginIntro);
@@ -707,7 +772,7 @@ window.SSANNT_MEDIA = {
     let pointerY = 0.5;
     let canvasRect;
     let lastDrawTime = 0;
-    const targetFrameInterval = innerWidth < 820 ? 1000 / 30 : 1000 / 40;
+    const targetFrameInterval = innerWidth < 820 ? 1000 / 24 : 1000 / 30;
     const audioAnalysis = initVisualPulse(audio, composition);
 
     function uploadTexture() {
@@ -769,7 +834,7 @@ window.SSANNT_MEDIA = {
     }
 
     function render(now) {
-      if (now - lastDrawTime >= targetFrameInterval) {
+      if (document.body.classList.contains('site-revealed') && now - lastDrawTime >= targetFrameInterval) {
         draw(now);
         lastDrawTime = now;
       }
@@ -1251,13 +1316,18 @@ window.SSANNT_MEDIA = {
     let pingTimer;
     let lastBpsPaint = 0;
 
+    let lastCoordsText = '';
+
     function updateCoordinates(x, y) {
       const normalizedX = clamp(x / Math.max(1, innerWidth), 0, 1);
       const normalizedY = clamp(y / Math.max(1, innerHeight), 0, 1);
       const worldX = Math.round((normalizedX * 2 - 1) * 999);
       const worldY = Math.round(64 + (1 - normalizedY) * 128);
       const worldZ = Math.round((normalizedY * 2 - 1) * 999);
-      coordsValue.textContent = `${worldX} ${worldY} ${worldZ}`;
+      const nextText = `${worldX} ${worldY} ${worldZ}`;
+      if (nextText === lastCoordsText) return;
+      lastCoordsText = nextText;
+      coordsValue.textContent = nextText;
     }
 
     function clamp(value, min, max) {
@@ -1374,6 +1444,8 @@ window.SSANNT_MEDIA = {
   let currentX = 0;
   let currentY = 0;
   let parallaxFrame = 0;
+  let lastX = '';
+  let lastY = '';
 
   function startParallax() {
     if (!parallaxFrame && !document.hidden) {
@@ -1387,12 +1459,20 @@ window.SSANNT_MEDIA = {
     startParallax();
   }, { passive: true });
 
+  const parallaxTarget = document.getElementById('avatarComposition') || document.documentElement;
+
   function updateAvatarParallax() {
     parallaxFrame = 0;
     currentX += (targetX - currentX) * 0.08;
     currentY += (targetY - currentY) * 0.08;
-    document.documentElement.style.setProperty('--avatar-x', `${(currentX * 12).toFixed(2)}px`);
-    document.documentElement.style.setProperty('--avatar-y', `${(currentY * 7).toFixed(2)}px`);
+    const nextX = `${(currentX * 12).toFixed(2)}px`;
+    const nextY = `${(currentY * 7).toFixed(2)}px`;
+    if (nextX !== lastX || nextY !== lastY) {
+      parallaxTarget.style.setProperty('--avatar-x', nextX);
+      parallaxTarget.style.setProperty('--avatar-y', nextY);
+      lastX = nextX;
+      lastY = nextY;
+    }
 
     if (Math.abs(targetX - currentX) > 0.0005 || Math.abs(targetY - currentY) > 0.0005) {
       startParallax();
@@ -1407,4 +1487,42 @@ window.SSANNT_MEDIA = {
       startParallax();
     }
   });
+})();
+
+(() => {
+  'use strict';
+
+  // Адаптивное качество: если кадры проседают — снимаем дорогие эффекты,
+  // внешний вид остаётся, но рендер дешевеет.
+  const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reduceMotion) {
+    document.body.classList.add('perf-lite');
+    return;
+  }
+
+  let frames = 0;
+  let windowStart = performance.now();
+  let slowWindows = 0;
+
+  function tick(now) {
+    frames += 1;
+    const elapsed = now - windowStart;
+
+    if (elapsed >= 1500) {
+      const fps = (frames * 1000) / elapsed;
+      frames = 0;
+      windowStart = now;
+
+      if (fps < 46) slowWindows += 1;
+      else slowWindows = 0;
+
+      if (slowWindows >= 2 && !document.body.classList.contains('perf-lite')) {
+        document.body.classList.add('perf-lite');
+      }
+    }
+
+    requestAnimationFrame(tick);
+  }
+
+  requestAnimationFrame(tick);
 })();

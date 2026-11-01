@@ -20,6 +20,8 @@
         muted
         playsinline
         preload="metadata"
+        poster="poster-01.jpg"
+        disablepictureinpicture
       ></video>
     </div>
 
@@ -29,7 +31,8 @@
         id="backgroundVideoB"
         muted
         playsinline
-        preload="metadata"
+        preload="none"
+        disablepictureinpicture
       ></video>
     </div>
 
@@ -94,22 +97,35 @@
   </main>
 
   <section class="intro" aria-label="Вступление">
+    <div class="exclamation-field" id="exclamationField" aria-hidden="true"></div>
+
     <div class="entry-gate">
-      <button class="entry-gate__button" id="enterSite" type="button">CLICK</button>
-      <p class="translation-warning">⚠ ВЫКЛЮЧИТЕ ПЕРЕВОД СТРАНИЦЫ</p>
-      <p class="compatibility-warning">⚠ ДЛЯ ЛОХОВ С ТЕЛЕФОНОВ И НОУТОВ: САЙТ НЕ ПРЕДНАЗНАЧЕН</p>
+      <button class="entry-gate__button" id="enterSite" type="button">
+        <span class="entry-gate__label">CLICK</span>
+      </button>
+    </div>
+
+    <div class="entry-toasts" id="entryToasts" aria-live="polite">
+      <div class="entry-toast">
+        <span class="entry-toast__mark" aria-hidden="true"></span>
+        <span class="entry-toast__text">Выключите перевод страницы</span>
+      </div>
+      <div class="entry-toast">
+        <span class="entry-toast__mark" aria-hidden="true"></span>
+        <span class="entry-toast__text">Разрешение сайта не подогнал под телефоны и ноуты</span>
+      </div>
     </div>
 
     <div class="hello-title" aria-hidden="true">HELLO</div>
 
     <div class="identity-reveal">
       <div class="identity-reveal__row">
-        <div class="exclamation-field" id="exclamationField" aria-hidden="true"></div>
-
+    
         <div class="inject-wrap">
           <button class="inject-button" id="injectButton" type="button">
             <span class="inject-button__label">INJECT</span>
             <span class="inject-percent" id="injectPercent" aria-live="polite">0%</span>
+            <span class="inject-progress" aria-hidden="true"><i class="inject-progress__bar" id="injectBar"></i></span>
           </button>
 
 
